@@ -4,13 +4,14 @@ import sys
 import os 
 import numpy as np
 
-vcf_file = sys.argv[1]
-o_dir = sys.argv[2]
+vcf_file = sys.argv[1] #path to merged vcf file 
+o_dir = sys.argv[2] #path to output directory as a string
 
 def VAF_calc(vcf_file):
     vcf = pysam.VariantFile(vcf_file)
     VAF = {}
 
+    #calculating VAF for each variant of a sample and writing them in dictionary
     for record in vcf:
         for sample_name, sample_data in record.samples.items():
             if sample_name not in VAF:
@@ -24,10 +25,12 @@ def VAF_calc(vcf_file):
                 VAF[sample_name].append(vaf)
             else:
                 pass 
-
+    
+    #calculating average VAF across samples 
     for key in VAF.keys():
         VAF[key] = round(np.mean(VAF.get(key)), 3)
 
+    #writing results to json file in provided output directory
     with open(os.path.join(o_dir+'VAF.json'), 'w') as file:
         json.dump(VAF, file)
 
