@@ -5,7 +5,7 @@ import os
 import numpy as np
 
 vcf_file = sys.argv[1] #path to merged vcf file 
-o_dir = sys.argv[2] #path to output directory as a string
+o_dir = str(sys.argv[2]) #path to output directory
 
 def VAF_calc(vcf_file):
     vcf = pysam.VariantFile(vcf_file)
