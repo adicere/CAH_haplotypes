@@ -45,13 +45,24 @@ def vcf_to_table(vcf_file):
         vcf_copy=vcf_copy.join(new_cols)
     
     vcf_copy=vcf_copy.drop(['ID', 'FILTER', 'INFO', 'FORMAT'], axis=1)
-    return vcf_copy
+    for col in vcf_copy.columns:
+        if col.startswith('770'):
+            vcf_copy[col] = vcf_copy[col].replace('.', None).astype('Int64')
+
+    return AF(vcf_copy)
+
+#count allele frequency for each variant
+def AF(df):
+    subset=df.iloc[:,5:].T.groupby(lambda x: x.split('_')[0]).sum().T.replace(2,1)
+    subset['AF'] = subset.sum(axis=1)
+    df['AF'] = subset['AF']/(len(subset.columns)-1)
+    return df
 
 #matching result df with variant table and extracting corresponding columns (rsid, phenotype, ACMG classification) as table_annotated.xlsx
 def variant_annotation(table, variants):
     variants['POS'] = variants['POS'].fillna(0).astype(int)
     matched = pd.merge(table,
-    variants[['POS', 'REF', 'ALT', 'rs#', 'Allele associated phenotype', 'ACMG']],  on=['POS', 'REF', 'ALT'],  how='left') 
+    variants[['POS', 'REF', 'ALT', 'Effect', 'rs#', 'Allele associated phenotype', 'ACMG']],  on=['POS', 'REF', 'ALT'],  how='left') 
     matched.to_excel(os.path.join(o_dir+'table_annotated.xlsx'), index=False)
     return matched
 
