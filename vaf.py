@@ -32,10 +32,6 @@ def VAF_calc(vcf_file):
                 variant_VAF[sample_name].append(np.nan)
 
                     
-    
-    #calculating average VAF across samples 
-    # for key in avg_VAF.keys():
-    #     avg_VAF[key] = round(np.mean(avg_VAF.get(key)), 3)
     for key in variant_VAF.keys():
         avg_VAF[key] = round(np.nanmean(variant_VAF.get(key)),3)
     #writing results to json file in provided output directory
