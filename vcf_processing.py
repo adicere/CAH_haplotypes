@@ -8,6 +8,9 @@ import pysam
 import gzip
 import re
 import json
+import warnings
+
+warnings.simplefilter(action='ignore', category=FutureWarning) #got FutureWarning from pandas regarding adding chimera row in chimeras function
 
 vcf_in = sys.argv[1] #merged vcf file
 var_table = pd.read_excel(sys.argv[2]) #preprocessed excel file with variant's annotation (should contain POS, REF and ALT columns) for matching
@@ -102,8 +105,9 @@ def chimeras(samples, pseudo): #function takes df with annotated variants and ta
         else:
             results[key] =  np.nan
 
-    new_row = {col: results.get(col, '') for col in samples.columns}
-    samples.loc[len(samples)] = new_row
+    # new_row = {col: results.get(col, np.nan) for col in samples.columns}
+    new_row=[results.get(col, np.nan) for col in samples.columns]
+    samples = pd.concat([samples, pd.DataFrame([new_row], columns=samples.columns)], ignore_index=True)
     samples.to_excel(os.path.join(o_dir+'annotated_variants.xlsx'), index=False)
 
 
