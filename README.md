@@ -7,5 +7,14 @@ Accurate genetic diagnosis of congenital adrenal hyperplasia (CAH) is complicate
 
 ## Workflow 
 
+The database is formed on sequencing data from *CYP21A1P* amplicons of patients with CAH and their relatives and its processing consist of three main parts: variant calling and annotation, haplotypes extraction and haplotypes assigning:
+
+![Workflow](visuals/workflow.jpg)
+
+## Variant calling 
+
+For variant calling GATK HaplotypeCaller (version 4.5.0) and the DeepVariant (version 1.6.1) were used. However, two callers provided different outcomes both for the amount of variants called and their associated genotype in the patient. In order to obtain unambiguous results for each patient and to avoid missing any variants, it is necessary to reconcile and confirm the data from the two methods, based on alignment and inheritance data:
+
+![Validation](visuals/variant_validation.jpeg)
 
 
