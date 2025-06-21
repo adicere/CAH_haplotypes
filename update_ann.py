@@ -8,6 +8,7 @@ import glob
 
 bcftools_path = '/home/rutkovskaya.ea/miniforge3/envs/haplotypes/bin/bcftools'
 reference = '/home/rutkovskaya.ea/haplotypes/CYP21A2-amp_hg38.fasta'
+modificator='/home/rutkovskaya.ea/haplotypes/CAH_haplotypes/coords_header.sh'
 
 updater = argparse.ArgumentParser(
     prog='Update Amplicon Annotation',
@@ -21,9 +22,12 @@ updater.add_argument('-e', '--exclude', type=str, help='provide a txt file with 
 args=updater.parse_args()
 
 # os.mkdir(args.output + 'mpileup')
-ann_file = pd.read_excel(args.ann_file)
-short=ann_file.iloc[:5, :]
-res_dir=args.output + 'mpileup'
+amplicon_ann = pd.read_excel(args.ann_file)
+short=amplicon_ann.copy().iloc[:5, :]
+mpileup_dir=os.path.join(args.output, 'mpileup')  
+reheaded_dir = os.path.join(args.output, 'reheaded_vcfs')  
+os.makedirs(mpileup_dir, exist_ok=True)   
+os.makedirs(reheaded_dir, exist_ok=True)   
 
 def exclude_samples(ann_file, sample_list):
     samples=sample_list.read().split('\n')
@@ -32,12 +36,30 @@ def exclude_samples(ann_file, sample_list):
     
     return filtered
 
+def modify_vcf(ann_file):
+    ann_file['hc_modified'] = ''
+    ann_file['dv_modified'] = ''
+    for idx, row in ann_file.iterrows():
+        sample = str(row['orig_sample'])[:8]
+        hc_vcf = row['hc_vcf']
+        dv_vcf = row['deepvariant']
+        subprocess.run(['bash', modificator, 
+                        '-h', hc_vcf, 
+                        '-d', dv_vcf, 
+                        '-s', sample, 
+                        '-o', reheaded_dir])
+        ann_file.at[idx, 'hc_modified'] = f'{reheaded_dir}/{sample}.hc.rehead.vcf.gz'
+        ann_file.at[idx, 'dv_modified'] = f'{reheaded_dir}/{sample}.dv.rehead.vcf.gz'
+    
+    return ann_file
+
+
 def naive_calling(ann_file):
     ann_file['mpileup'] = ''
     for idx, row in ann_file.iterrows():
         bam = row['bam']
         sample = str(row['orig_sample'])
-        filename=f'{res_dir}/{sample}.pileup.vcf.gz'
+        filename=f'{mpileup_dir}/{sample}.pileup.vcf.gz'
         mpileup = subprocess.Popen([bcftools_path, 
                                     'mpileup',
                                     '-f', reference, 
@@ -51,10 +73,11 @@ def naive_calling(ann_file):
         calling.wait()           
         mpileup.wait() 
         ann_file.at[idx, 'mpileup'] = str(filename)
-    print(ann_file)    
+   
 
 if args.exclude is not None:
     to_exclude = open(args.exclude) 
-    filtered_list=exclude_samples(ann_file, to_exclude)
+    filtered_list=exclude_samples(amplicon_ann, to_exclude)
 else:
-    res=naive_calling(short)
+    res = modify_vcf(short)
+    # res=naive_calling(short)
