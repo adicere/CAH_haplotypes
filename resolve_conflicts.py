@@ -131,13 +131,11 @@ def check_inheritance(patient, pos, kinship_data, gt_hc, gt_dv, gt_bam, ill_pati
     closest_relatives=['child', 'sibling', 'parent', 'spouse']
     relatives = kinship_data.get(patient, {})
     if not relatives:
-        return False
-    inheritance=[]
+        return False, 'No data about relatives found for patient'
     samples = [str(patient)] + [
         str(rel) for rel, degree in relatives.items()
         if degree in closest_relatives
     ]
-    # print(samples)
     matrix = pd.DataFrame(index=samples, columns=['HC', 'DV', 'BAM'])
 
     for sample in samples:
@@ -150,21 +148,19 @@ def check_inheritance(patient, pos, kinship_data, gt_hc, gt_dv, gt_bam, ill_pati
     
     matrix['total'] = matrix.sum(axis=1)
     res = (matrix['total'] > 0).sum()
-    # print(matrix)
-    # print('*'*10)
-    if res > 1:
-        logging.info(f'more than one person in a family have {pos}, saving this variant for {patient}')
-        if matrix.loc[ill, 'total'] == 0:
-            logging.info(f'ill patient {ill} does not have parents variant, need manual inspection')
-        return True
-    else:
-        log = (f'relatives do not have {pos}, patients data:',
-                     f'HC - {gt_hc.get(str(patient), {}).get(pos)}',
-                     f'DV - {gt_dv.get(str(patient), {}).get(pos)}',
-                     f'BAM - {gt_bam.get(str(patient), {}).get(pos)}')
-        logging.info(log)
 
-        return False    
+    if res > 1:
+        msg = f'[INHERITANCE] {pos} was confirmed by family analysis - at least one more person has variant, saving this position, but genotype needs manual inspection'
+        # if matrix.loc[ill, 'total'] == 0:
+        #     logging.info(f'ill patient {ill} does not have parents variant, need manual inspection')
+        return True, msg
+    else:
+        msg = ', '.join([f"[INHERITANCE] Relatives do not have {pos}",
+                     f"patient's data: HC - {gt_hc.get(str(patient), {}).get(pos)}",
+                     f"DV - {gt_dv.get(str(patient), {}).get(pos)}",
+                     f"BAM - {gt_bam.get(str(patient), {}).get(pos)}."])
+        # logging.info(log)
+        return False, msg  
 
 def for_manual_inspection(sample, position, hc_data, dv_data, bam_data):
     bam_pos=int(position.split('_')[0]) - 32037619
@@ -219,105 +215,125 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
         sample_dv = gt_dv.get(str(sample), {})
         sample_bam = gt_bam.get(str(sample), {})
 
-        logging.info(f'checking variants for {sample}')
+        sample_checked = False
+        log_buffer = []
+
         for position in sample_hc.keys():
             hc, vaf, dp = sample_hc[position]
             if position in sample_dv.keys():
                 dv=sample_dv[position][0]
                 if hc == dv:
-                    # logging.info(f'no conflict for {position} in {sample} with {sample_hc[position]}')
                     resolved[sample][position] = 'hc'
                 elif hc!=dv:
-                    logging.info(f"check {position}: HC - {sample_hc[position]}, DV - {dv}, bam - {sample_bam.get(position, 'Not found in bam')}")
+                    # log_buffer.append(f"check {position}: HC - {sample_hc[position]}, DV - {dv}, bam - {sample_bam.get(position, 'Not found in bam')}")
                     if position in sample_bam.keys():
                             mp=sample_bam[position][0]
                             if mp == hc:
-                                logging.info(f'HC genotype is supported by bam for {position} in {sample};'
-                                      f'HC - {sample_hc[position]}, DV - {dv}, bam - {sample_bam[position]}')
+                                sample_checked=True
+                                log_buffer.append(f"[CONFLICT] Conflict at {position}; HC genotype was supported by mpileup data")
                                 resolved[sample][position] = 'hc'
                             else:
-                                logging.info(f'DV genotype is supported by bam for {position} in {sample};'
-                                      f'HC - {sample_hc[position]}, DV - {dv}, bam - {sample_bam[position]}')
+                                sample_checked=True
+                                log_buffer.append(f"[CONFLICT] Conflict at {position}; DV genotype was supported by mpileup data")
                                 resolved[sample][position] = 'dv'
                     else:
                         if (hc == 2 and vaf>0.85) or (hc==1 and vaf>= 0.2 and vaf <0.85):
                             if dp>=30:
-                                logging.info(f'choice in favor of HC genotype for {position} in {sample};'
-                                      f'HC - {sample_hc[position]}, DV - {dv}')
+                                sample_checked=True
+                                log_buffer.append(f"[CONFLICT] Conflict at {position};"
+                                                  f"no mpileup data, but HC genotype is accepted due to correct VAF value")
                                 resolved[sample][position] = 'hc'
                             else:
-                                logging.info(f'data is unclear; need to check inheritance for {position} in {sample}')
-                                inheritance = check_inheritance(sample, position, kinship_data, gt_hc, gt_dv, gt_bam, ill_samples)
+                                # log_buffer.append(f'data is unclear; need to check inheritance for {position} in {sample}')
+                                inheritance, message = check_inheritance(sample, position, kinship_data, gt_hc, gt_dv, gt_bam, ill_samples)
                                 if inheritance: 
-                                    logging.info('saving this variant even with low DP')
+                                    sample_checked=True
+                                    log_buffer.append(message)
                                     resolved[sample][position] = 'hc'
                                 else:
-                                    logging.info('droping this variant, probably artefact')
+                                    sample_checked=True
+                                    log_buffer.append(message + ' Dropping this variant, probably an artefact')
                         else:
-                            logging.info(f'data is unclear; need to check inheritance for {position} in {sample}')
-                            inheritance = check_inheritance(sample, position, kinship_data, gt_hc, gt_dv, gt_bam, ill_samples)
+                            # log_buffer.append(f'data is unclear; need to check inheritance for {position} in {sample}')
+                            inheritance, message = check_inheritance(sample, position, kinship_data, gt_hc, gt_dv, gt_bam, ill_samples)
                             if inheritance:
-                                logging.info('position found in relatives, but genotype needs manual inspection')
+                                sample_checked=True
+                                log_buffer.append(message)
                                 resolved[sample][position] = 'hc'
                                 manual_check.append(for_manual_inspection(str(sample), position, gt_hc, gt_dv, gt_bam))
                             else:
-                                logging.info('droping this variant, probably artefact')
+                                sample_checked=True
+                                log_buffer.append(message + ' Dropping this variant, probably an artefact')
             else:
-                # logging.info(f'only called by HC for {position} in {sample}')
+                # log_buffer.append(f'only called by HC for {position} in {sample}')
                 if ((hc == 2 and vaf>0.85) or (hc==1 and vaf>= 0.2 and vaf <0.85)) and dp>=30:
-                    # logging.info(f'{position} in {sample} is OK')
+                    # log_buffer.append(f'{position} in {sample} is OK')
                     resolved[sample][position] = 'hc'        
                 else:
-                    logging.info(f'unclear {position} varinant in {sample} with {sample_hc[position]}')
+                    # log_buffer.append(f'unclear {position} variant in {sample} with {sample_hc[position]}')
                     if position in sample_bam.keys():
                         mp=sample_bam[position][0]
                         if mp == hc:
-                            logging.info(f'HC genotype is supported by bam for {position} in {sample}')
+                            sample_checked=True
+                            log_buffer.append(f'[CONFLICT] Conflict at {position}; HC genotype was supported by mpileup data')
                             resolved[sample][position] = 'hc'
                         else:
-                            logging.info(f'HC is conflicting with naive calling for {position} in {sample};' 
+                            sample_checked=True
+                            log_buffer.append(f'[CONFLICT] Conflict at {position}; Accepting mpileup genotype instead of HC' 
                                          f'HC - {sample_hc[position]}, BAM - {sample_bam[position]}')
                             resolved[sample][position] = 'mp'
                     else:
-                        logging.info(f'{position} in {sample} with {sample_hc[position]} cannot be supported by BAM, checking inheritance')
-                        inheritance = check_inheritance(sample, position, kinship_data, gt_hc, gt_dv, gt_bam, ill_samples)
+                        # log_buffer.append(f'{position} in {sample} with {sample_hc[position]} cannot be supported by BAM, checking inheritance')
+                        inheritance, message = check_inheritance(sample, position, kinship_data, gt_hc, gt_dv, gt_bam, ill_samples)
                         if inheritance: 
-                            logging.info('saving this variant, but genotype needs manual confirmation')
+                            sample_checked=True
+                            log_buffer.append(message)
                             resolved[sample][position] = 'hc'
                             manual_check.append(for_manual_inspection(str(sample), position, gt_hc, gt_dv, gt_bam))
                         else:
-                            logging.info('droping this variant, probably artefact')
+                            sample_checked=True
+                            log_buffer.append(message + ' Dropping this variant, probably an artefact')
 
         for position, dv_data in sample_dv.items():
             if position not in resolved[sample]:
-                # logging.info(f'{position} in {sample} found in DV, but not in HC, checking it')
+                # log_buffer.append(f'{position} in {sample} found in DV, but not in HC, checking it')
                 dv=dv_data[0]  
                 bam = sample_bam.get(position)
                 if bam:
                     mp=bam[0]
                     if dv == mp:
-                        logging.info(f'DV {position} in {sample} is supported by BAM data {sample_bam[position]}')
+                        # log_buffer.append(f'DV {position} in {sample} is supported by BAM data {sample_bam[position]}')
                         resolved[sample][position] = 'dv'
                     else:
-                        logging.info(f'DV and mpileup for {position} in {sample} are conflicted; DV - {dv_data}, BAM - {bam}')
+                        sample_checked=True
+                        log_buffer.append(f'[CONFLICT] Conflict at {position}; Accepting mpileup genotype instead of DV')
                         resolved[sample][position] = 'mp'
                 else:
-                    logging.info(f'DV {position} in {sample} cannot be supported by BAM data, need to check inheritance')
-                    inheritance = check_inheritance(sample, position, kinship_data, gt_hc, gt_dv, gt_bam, ill_samples)
+                    # log_buffer.append(f'DV {position} in {sample} cannot be supported by BAM data, need to check inheritance')
+                    inheritance, message = check_inheritance(sample, position, kinship_data, gt_hc, gt_dv, gt_bam, ill_samples)
                     if inheritance == True:
-                        logging.info(f'saving this variant due to inheritance with {sample_dv[position]}, but genotype need manual inspection')
+                        sample_checked=True
+                        log_buffer.append(message)
                         resolved[sample][position] = 'dv'
                         manual_check.append(for_manual_inspection(str(sample), position, gt_hc, gt_dv, gt_bam))
                     else:
-                        logging.info('droping this variant, probably artefact')         
+                        sample_checked=True
+                        log_buffer.append(message + ' Dropping this variant, probably an artefact')         
         for position in sample_bam:
             if position not in resolved[sample]:
                 mp, vaf, dp = sample_bam[position]
                 if dp >= 30:
                     gt = 'heterozygous' if sample_bam[position][0] ==1 else 'homozygous'
-                    logging.info(f'{position} in {sample} was called only by naive calling with {gt} genotype ({sample_bam[position]})')
+                    sample_checked=True
+                    log_buffer.append(f'[NAIVE VARIANT] {position} was called only by naive calling - {sample_bam[position]}')
                     resolved[sample][position] = 'mp'
-       
+
+        if sample_checked:
+            logging.info(f"==== Results of variant check for sample {sample} ====")
+            for line in log_buffer:
+                logging.info(line)
+            logging.info("") 
+
     return resolved, manual_check
                         
                             
@@ -332,4 +348,3 @@ filtered['patient'] = filtered['patient'].astype(str)
 ill_patients = filtered.loc[filtered['group'] == 'ILL', 'patient'].tolist()
 calling_region = [32037643, 32041345]
 res_var, manual_insp = check_conflicts(files_list, kinship, ill_patients, calling_region)
-print(pd.DataFrame(manual_insp))
