@@ -166,13 +166,36 @@ def check_inheritance(patient, pos, kinship_data, gt_hc, gt_dv, gt_bam, ill_pati
 
         return False    
 
+def for_manual_inspection(sample, position, hc_data, dv_data, bam_data):
+    bam_pos=int(position.split('_')[0]) - 32037619
+    hc_raw = hc_data.get(sample, {}).get(position)
+    dv_raw = dv_data.get(sample, {}).get(position)
+    bam_raw = bam_data.get(sample, {}).get(position)
+
+    hc = [str(x) for x in hc_raw] if hc_raw else ['N/A']
+    dv = [str(x) for x in dv_raw] if dv_raw else ['N/A']
+    bam = [str(x) for x in bam_raw] if bam_raw else ['N/A']
+
+    sus_variant={
+        'Sample': sample,
+        'Variant': position,
+        'BAM_position': bam_pos,
+        'HC_call': '; '.join(hc), 
+        'DV_call': '; '.join(dv), 
+        'mpileup_call': '; '.join(bam)
+    }
     
+    return sus_variant
+
+
 def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
     # kinship = kinship_data(ann_file)
     resolved = defaultdict(dict)
     gt_hc=defaultdict(dict)
     gt_dv=defaultdict(dict)
     gt_bam=defaultdict(dict)
+    manual_check=[]
+
     for idx, row in ann_file.iterrows():
         # dv
         vcf = read_vcf(row['dv'], mode= 'dv')
@@ -205,7 +228,7 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
                     # logging.info(f'no conflict for {position} in {sample} with {sample_hc[position]}')
                     resolved[sample][position] = 'hc'
                 elif hc!=dv:
-                    logging.info(f'check {position}: HC - {sample_hc[position]}, DV - {dv}, bam - {sample_bam.get(position, 'Not found in bam')}')
+                    logging.info(f"check {position}: HC - {sample_hc[position]}, DV - {dv}, bam - {sample_bam.get(position, 'Not found in bam')}")
                     if position in sample_bam.keys():
                             mp=sample_bam[position][0]
                             if mp == hc:
@@ -235,13 +258,14 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
                             inheritance = check_inheritance(sample, position, kinship_data, gt_hc, gt_dv, gt_bam, ill_samples)
                             if inheritance:
                                 logging.info('position found in relatives, but genotype needs manual inspection')
-                                # ?
+                                resolved[sample][position] = 'hc'
+                                manual_check.append(for_manual_inspection(str(sample), position, gt_hc, gt_dv, gt_bam))
                             else:
                                 logging.info('droping this variant, probably artefact')
             else:
-                logging.info(f'only called by HC for {position} in {sample}')
+                # logging.info(f'only called by HC for {position} in {sample}')
                 if ((hc == 2 and vaf>0.85) or (hc==1 and vaf>= 0.2 and vaf <0.85)) and dp>=30:
-                    logging.info(f'{position} in {sample} is OK')
+                    # logging.info(f'{position} in {sample} is OK')
                     resolved[sample][position] = 'hc'        
                 else:
                     logging.info(f'unclear {position} varinant in {sample} with {sample_hc[position]}')
@@ -260,12 +284,13 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
                         if inheritance: 
                             logging.info('saving this variant, but genotype needs manual confirmation')
                             resolved[sample][position] = 'hc'
+                            manual_check.append(for_manual_inspection(str(sample), position, gt_hc, gt_dv, gt_bam))
                         else:
                             logging.info('droping this variant, probably artefact')
 
         for position, dv_data in sample_dv.items():
             if position not in resolved[sample]:
-                logging.info(f'{position} in {sample} found in DV, but not in HC, checking it')
+                # logging.info(f'{position} in {sample} found in DV, but not in HC, checking it')
                 dv=dv_data[0]  
                 bam = sample_bam.get(position)
                 if bam:
@@ -274,21 +299,26 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
                         logging.info(f'DV {position} in {sample} is supported by BAM data {sample_bam[position]}')
                         resolved[sample][position] = 'dv'
                     else:
-                        logging.info(f'DV and mpileup for {position} in {sample} are conflicted, need to check manually')
+                        logging.info(f'DV and mpileup for {position} in {sample} are conflicted; DV - {dv_data}, BAM - {bam}')
+                        resolved[sample][position] = 'mp'
                 else:
                     logging.info(f'DV {position} in {sample} cannot be supported by BAM data, need to check inheritance')
                     inheritance = check_inheritance(sample, position, kinship_data, gt_hc, gt_dv, gt_bam, ill_samples)
                     if inheritance == True:
-                        logging.info('saving this variant due to inheritance')
+                        logging.info(f'saving this variant due to inheritance with {sample_dv[position]}, but genotype need manual inspection')
                         resolved[sample][position] = 'dv'
+                        manual_check.append(for_manual_inspection(str(sample), position, gt_hc, gt_dv, gt_bam))
                     else:
                         logging.info('droping this variant, probably artefact')         
         for position in sample_bam:
             if position not in resolved[sample]:
-                logging.info(f'{position} in {sample} was called only by naive calling with {sample_bam[position][0]} genotype')
-                resolved[sample][position] = 'mp'
+                mp, vaf, dp = sample_bam[position]
+                if dp >= 30:
+                    gt = 'heterozygous' if sample_bam[position][0] ==1 else 'homozygous'
+                    logging.info(f'{position} in {sample} was called only by naive calling with {gt} genotype ({sample_bam[position]})')
+                    resolved[sample][position] = 'mp'
        
-    return resolved
+    return resolved, manual_check
                         
                             
                     
@@ -301,4 +331,5 @@ kinship = kinship_data(filtered)
 filtered['patient'] = filtered['patient'].astype(str)
 ill_patients = filtered.loc[filtered['group'] == 'ILL', 'patient'].tolist()
 calling_region = [32037643, 32041345]
-res = check_conflicts(files_list, kinship, ill_patients, calling_region)
+res_var, manual_insp = check_conflicts(files_list, kinship, ill_patients, calling_region)
+print(pd.DataFrame(manual_insp))
