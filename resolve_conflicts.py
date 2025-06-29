@@ -35,6 +35,7 @@ def kinship_data(ann_file):
                 if i_id == j_id:
                     continue
                 rel_dict[j_id] = kinship_type(i_rel, j_rel)
+                
     return kinship
 
 def read_vcf(link, mode=None): 
@@ -75,57 +76,9 @@ def gt_vectors(vcf, mode = None):
             gt=int(row['GT'].split('/')[0]) + int(row['GT'].split('/')[1])
             vaf=int(row['AD'].split(',')[1])/row['DP']
             gt_vector[position] = [gt, vaf, row['DP']]
+
     return gt_vector
 
-# def check_inheritance(patient, pos, kinship_data, gt_hc, gt_dv, gt_bam):
-#     closest_relatives=['child', 'sibling', 'parent']
-#     relatives = kinship_data.get(patient, {})
-#     if not relatives:
-#         return False
-#     inheritance=[]
-#     for rel, kinship_degree in relatives.items():
-#         if kinship_degree not in closest_relatives:
-#             continue
-#         rel_id = str(rel)
-
-#         hc_data = gt_hc.get(rel_id, {}).get(pos)
-#         dv_data = gt_dv.get(rel_id, {}).get(pos)
-#         bam_data = gt_bam.get(rel_id, {}).get(pos)
-
-#         if hc_data:
-#             genotype, vaf, dp = hc_data
-#             if genotype == 2 and vaf >= 0.85:
-#                 msg = "homozygote" if dp >= 30 else "lowqual homozygote"
-#                 logging.info(f'found a {msg} {pos} in {rel_id} with VAF {vaf}, DP {dp}')
-#                 inheritance.append(genotype)
-#             elif genotype == 1 and 0.2 <= vaf < 0.85:
-#                 msg = "heterozygote" if dp >= 30 else "lowqual heterozygote"
-#                 logging.info(f'found a {msg} {pos} in {rel_id} with VAF {vaf}, DP {dp}')
-#                 inheritance.append(genotype)
-#             else:
-#                 logging.info(f'found only low qual {pos} in {rel_id} with VAF {vaf}, DP {dp}, probably an artefact')
-
-#         elif dv_data:
-#             logging.info(f'{pos} found only in DV data of {rel_id}')
-#             dv_genotype = dv_data[0]
-#             if bam_data:
-#                 if bam_data[0] == dv_genotype:
-#                     logging.info(f'DV variant in {rel_id} is supported by BAM')
-#                 else:
-#                     logging.info(f'DV genotype ({dv_genotype}) in {rel_id} differs from BAM data: {bam_data}')
-#                 inheritance.append(bam_data[0])
-#             else:
-#                 logging.info(f'cannot support found DV variant in {rel_id} by BAM, needs manual inspection')
-#                 inheritance.append(dv_genotype)
-
-#         elif bam_data:
-#             logging.info(f'{pos} found only in BAM data of {rel_id}')
-#             inheritance.append(bam_data[0])
-
-#         else:
-#             logging.info(f'no {pos} found in {rel_id}')
-#         logging.info(inheritance)
-#         return bool(inheritance)
 
 def check_inheritance(patient, pos, kinship_data, gt_hc, gt_dv, gt_bam, ill_patients):
     closest_relatives=['child', 'sibling', 'parent', 'spouse']
@@ -150,16 +103,19 @@ def check_inheritance(patient, pos, kinship_data, gt_hc, gt_dv, gt_bam, ill_pati
     res = (matrix['total'] > 0).sum()
 
     if res > 1:
-        msg = f'[INHERITANCE] {pos} was confirmed by family analysis - at least one more person has variant, saving this position, but genotype needs manual inspection'
-        # if matrix.loc[ill, 'total'] == 0:
-        #     logging.info(f'ill patient {ill} does not have parents variant, need manual inspection')
+        if matrix.loc[ill, 'total'] == 0:
+            msg = '\n'.join([f"[INHERITANCE] {pos} was confirmed by family analysis - at least one more person has variant, saving this position, but genotype needs manual inspection",
+                             f"[WARNING] Ill patient {ill} does not have parents variant {pos}, needs manual inspection"])
+        else:
+            msg = f'[INHERITANCE] {pos} was confirmed by family analysis - at least one more person has variant, saving this position, but genotype needs manual inspection'
+    
         return True, msg
     else:
         msg = ', '.join([f"[INHERITANCE] Relatives do not have {pos}",
                      f"patient's data: HC - {gt_hc.get(str(patient), {}).get(pos)}",
                      f"DV - {gt_dv.get(str(patient), {}).get(pos)}",
                      f"BAM - {gt_bam.get(str(patient), {}).get(pos)}."])
-        # logging.info(log)
+
         return False, msg  
 
 def for_manual_inspection(sample, position, hc_data, dv_data, bam_data):
@@ -191,6 +147,8 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
     gt_dv=defaultdict(dict)
     gt_bam=defaultdict(dict)
     manual_check=[]
+    all_logs = {}
+    low_qual = defaultdict(lambda: {'Variant': [], 'Parameters': []})
 
     for idx, row in ann_file.iterrows():
         # dv
@@ -244,6 +202,8 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
                                                   f"no mpileup data, but HC genotype is accepted due to correct VAF value")
                                 resolved[sample][position] = 'hc'
                             else:
+                                low_qual[str(sample)]['Variant'].append(position)
+                                low_qual[str(sample)]['Parameters'].append(', '.join(str(p) for p in sample_hc[position]))
                                 # log_buffer.append(f'data is unclear; need to check inheritance for {position} in {sample}')
                                 inheritance, message = check_inheritance(sample, position, kinship_data, gt_hc, gt_dv, gt_bam, ill_samples)
                                 if inheritance: 
@@ -327,14 +287,23 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
                     sample_checked=True
                     log_buffer.append(f'[NAIVE VARIANT] {position} was called only by naive calling - {sample_bam[position]}')
                     resolved[sample][position] = 'mp'
+                else:
+                    low_qual[str(sample)]['Variant'].append(position)
+                    low_qual[str(sample)]['Parameters'].append(', '.join(str(p) for p in sample_bam[position]))
 
         if sample_checked:
-            logging.info(f"==== Results of variant check for sample {sample} ====")
-            for line in log_buffer:
-                logging.info(line)
-            logging.info("") 
+            all_logs[str(sample)] = log_buffer
 
-    return resolved, manual_check
+    samples_with_warning = [s for s, logs in all_logs.items() if any("[WARNING]" in line for line in logs)]
+    samples_without_warning = [s for s in all_logs if s not in samples_with_warning]
+
+    for sample in samples_with_warning + samples_without_warning:
+        logging.info(f"==== Results of variant check for sample {sample} ====")
+        for line in all_logs[sample]:
+            logging.info(line)
+        logging.info("")
+
+    return resolved, manual_check, low_qual
                         
                             
                     
@@ -347,4 +316,12 @@ kinship = kinship_data(filtered)
 filtered['patient'] = filtered['patient'].astype(str)
 ill_patients = filtered.loc[filtered['group'] == 'ILL', 'patient'].tolist()
 calling_region = [32037643, 32041345]
-res_var, manual_insp = check_conflicts(files_list, kinship, ill_patients, calling_region)
+res_var, manual_insp, lq_variants = check_conflicts(files_list, kinship, ill_patients, calling_region)
+
+rows = []
+for sample, data in lq_variants.items():
+    for variant, param in zip(data['Variant'], data['Parameters']):
+        rows.append({'Sample': sample, 'Variant': variant, 'Parameters': param})
+
+low_qual_df = pd.DataFrame(rows)
+print(low_qual_df)
