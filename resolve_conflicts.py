@@ -214,7 +214,7 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
                                     sample_checked=True
                                     if message == 'No data about relatives found for patient.':
                                         manual_check.append(for_manual_inspection(str(sample), position, gt_hc, gt_dv, gt_bam))
-                                        log_buffer.append(message + ' Needs manual inspection')
+                                        log_buffer.append(f"[INHERITANCE] Patient doesn't have relatives. {position} needs manual inspection.")
                                     else:
                                         log_buffer.append(message + ' Dropping this variant, probably an artefact')
                         else:
@@ -229,7 +229,7 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
                                 sample_checked=True
                                 if message == 'No data about relatives found for patient.':
                                     manual_check.append(for_manual_inspection(str(sample), position, gt_hc, gt_dv, gt_bam))
-                                    log_buffer.append(message + ' Needs manual inspection')
+                                    log_buffer.append(f"[INHERITANCE] Patient doesn't have relatives. {position} needs manual inspection.")
                                 else:
                                     log_buffer.append(message + ' Dropping this variant, probably an artefact')
             else:
@@ -262,7 +262,7 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
                             sample_checked=True
                             if message == 'No data about relatives found for patient.':
                                 manual_check.append(for_manual_inspection(str(sample), position, gt_hc, gt_dv, gt_bam))
-                                log_buffer.append(message + ' Needs manual inspection')
+                                log_buffer.append(f"[INHERITANCE] Patient doesn't have relatives. {position} needs manual inspection.")
                             else:
                                 log_buffer.append(message + ' Dropping this variant, probably an artefact')
 
@@ -292,7 +292,7 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
                         sample_checked=True
                         if message == 'No data about relatives found for patient.':
                             manual_check.append(for_manual_inspection(str(sample), position, gt_hc, gt_dv, gt_bam))
-                            log_buffer.append(message + ' Needs manual inspection')
+                            log_buffer.append(f"[INHERITANCE] Patient doesn't have relatives. {position} needs manual inspection.")
                         else:
                             log_buffer.append(message + ' Dropping this variant, probably an artefact')         
         for position in sample_bam:
