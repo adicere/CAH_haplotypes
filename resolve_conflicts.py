@@ -84,7 +84,7 @@ def check_inheritance(patient, pos, kinship_data, gt_hc, gt_dv, gt_bam, ill_pati
     closest_relatives=['child', 'sibling', 'parent', 'spouse']
     relatives = kinship_data.get(patient, {})
     if not relatives:
-        return False, 'No data about relatives found for patient'
+        return False, 'No data about relatives found for patient.'
     samples = [str(patient)] + [
         str(rel) for rel, degree in relatives.items()
         if degree in closest_relatives
@@ -152,18 +152,18 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
 
     for idx, row in ann_file.iterrows():
         # dv
-        vcf = read_vcf(row['dv'], mode= 'dv')
+        vcf = read_vcf(row['dv_modified'], mode= 'dv')
         vcf = vcf[vcf['FILTER'] == 'PASS']
         if calling_region:
             vcf = vcf[(vcf['POS'] >= calling_region[0]) & (vcf['POS'] <= calling_region[1])] 
         gt_dv[str(idx)]=gt_vectors(vcf)
         # hc 
-        vcf = read_vcf(row['hc'], mode = 'hc')
+        vcf = read_vcf(row['hc_modified'], mode = 'hc')
         if calling_region:
             vcf = vcf[(vcf['POS'] >= calling_region[0]) & (vcf['POS'] <= calling_region[1])]
         gt_hc[str(idx)]=gt_vectors(vcf)
         #bam
-        vcf = read_vcf(row['noBAQ'], mode = 'dv')
+        vcf = read_vcf(row['mpileup_modified'], mode = 'dv')
         if calling_region:
             vcf = vcf[(vcf['POS'] >= calling_region[0]) & (vcf['POS'] <= calling_region[1])]
         gt_bam[str(idx)]=gt_vectors(vcf)
@@ -212,7 +212,11 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
                                     resolved[sample][position] = 'hc'
                                 else:
                                     sample_checked=True
-                                    log_buffer.append(message + ' Dropping this variant, probably an artefact')
+                                    if message == 'No data about relatives found for patient.':
+                                        manual_check.append(for_manual_inspection(str(sample), position, gt_hc, gt_dv, gt_bam))
+                                        log_buffer.append(message + ' Needs manual inspection')
+                                    else:
+                                        log_buffer.append(message + ' Dropping this variant, probably an artefact')
                         else:
                             # log_buffer.append(f'data is unclear; need to check inheritance for {position} in {sample}')
                             inheritance, message = check_inheritance(sample, position, kinship_data, gt_hc, gt_dv, gt_bam, ill_samples)
@@ -223,7 +227,11 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
                                 manual_check.append(for_manual_inspection(str(sample), position, gt_hc, gt_dv, gt_bam))
                             else:
                                 sample_checked=True
-                                log_buffer.append(message + ' Dropping this variant, probably an artefact')
+                                if message == 'No data about relatives found for patient.':
+                                    manual_check.append(for_manual_inspection(str(sample), position, gt_hc, gt_dv, gt_bam))
+                                    log_buffer.append(message + ' Needs manual inspection')
+                                else:
+                                    log_buffer.append(message + ' Dropping this variant, probably an artefact')
             else:
                 # log_buffer.append(f'only called by HC for {position} in {sample}')
                 if ((hc == 2 and vaf>0.85) or (hc==1 and vaf>= 0.2 and vaf <0.85)) and dp>=30:
@@ -252,7 +260,11 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
                             manual_check.append(for_manual_inspection(str(sample), position, gt_hc, gt_dv, gt_bam))
                         else:
                             sample_checked=True
-                            log_buffer.append(message + ' Dropping this variant, probably an artefact')
+                            if message == 'No data about relatives found for patient.':
+                                manual_check.append(for_manual_inspection(str(sample), position, gt_hc, gt_dv, gt_bam))
+                                log_buffer.append(message + ' Needs manual inspection')
+                            else:
+                                log_buffer.append(message + ' Dropping this variant, probably an artefact')
 
         for position, dv_data in sample_dv.items():
             if position not in resolved[sample]:
@@ -278,7 +290,11 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
                         manual_check.append(for_manual_inspection(str(sample), position, gt_hc, gt_dv, gt_bam))
                     else:
                         sample_checked=True
-                        log_buffer.append(message + ' Dropping this variant, probably an artefact')         
+                        if message == 'No data about relatives found for patient.':
+                            manual_check.append(for_manual_inspection(str(sample), position, gt_hc, gt_dv, gt_bam))
+                            log_buffer.append(message + ' Needs manual inspection')
+                        else:
+                            log_buffer.append(message + ' Dropping this variant, probably an artefact')         
         for position in sample_bam:
             if position not in resolved[sample]:
                 mp, vaf, dp = sample_bam[position]
@@ -307,21 +323,25 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
                         
                             
                     
-annotation=pd.read_csv('/home/rutkovskaya.ea/haplotypes/text_files/dev_files/amplicon_annotation_processed.tsv', sep='\t', index_col=0)
-filtered = annotation[~annotation['patient'].isna()]
-# filtered = annotation.loc[~(annotation['family'].map(lambda x: int(x) < 0 if 'diab' not in x else False))]
-filtered['patient'] = filtered['patient'].astype(int)
-files_list= pd.read_excel('/home/rutkovskaya.ea/haplotypes/text_files/callers_comparison.xlsx', index_col=0)
-kinship = kinship_data(filtered)
-filtered['patient'] = filtered['patient'].astype(str)
-ill_patients = filtered.loc[filtered['group'] == 'ILL', 'patient'].tolist()
-calling_region = [32037643, 32041345]
-res_var, manual_insp, lq_variants = check_conflicts(files_list, kinship, ill_patients, calling_region)
+# annotation=pd.read_excel('/home/rutkovskaya.ea/haplotypes/text_files/samples_for_analysis.xlsx', index_col=0)
+# filtered = annotation[~annotation['patient'].isna()]
+# filtered['patient'] = filtered['patient'].astype(int)
+# kinship = kinship_data(filtered)
+# filtered['patient'] = filtered['patient'].astype(str)
+# ill_patients = filtered.loc[filtered['group'] == 'ILL', 'patient'].tolist()
+# calling_region = [32037643, 32041345]
+# res_var, manual_insp, lq_variants = check_conflicts(filtered, kinship, ill_patients, calling_region)
 
-rows = []
-for sample, data in lq_variants.items():
-    for variant, param in zip(data['Variant'], data['Parameters']):
-        rows.append({'Sample': sample, 'Variant': variant, 'Parameters': param})
+# pd.DataFrame(res_var).to_excel('/home/rutkovskaya.ea/haplotypes/text_files/resolved.xlsx')
 
-low_qual_df = pd.DataFrame(rows)
-print(low_qual_df)
+
+# rows = []
+# for sample, data in lq_variants.items():
+#     for variant, param in zip(data['Variant'], data['Parameters']):
+#         rows.append({'Sample': sample, 'Variant': variant, 'Parameters': param})
+
+# low_qual_df = pd.DataFrame(rows)
+
+
+# pd.DataFrame(manual_insp).to_excel('/home/rutkovskaya.ea/haplotypes/text_files/manual_inspection.xlsx', index = False)
+# low_qual_df.to_excel('/home/rutkovskaya.ea/haplotypes/text_files/lq_variants.xlsx', index=False)
