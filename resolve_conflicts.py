@@ -323,14 +323,14 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
                         
                             
                     
-# annotation=pd.read_excel('/home/rutkovskaya.ea/haplotypes/text_files/samples_for_analysis.xlsx', index_col=0)
-# filtered = annotation[~annotation['patient'].isna()]
-# filtered['patient'] = filtered['patient'].astype(int)
-# kinship = kinship_data(filtered)
-# filtered['patient'] = filtered['patient'].astype(str)
-# ill_patients = filtered.loc[filtered['group'] == 'ILL', 'patient'].tolist()
-# calling_region = [32037643, 32041345]
-# res_var, manual_insp, lq_variants = check_conflicts(filtered, kinship, ill_patients, calling_region)
+annotation=pd.read_excel('/home/rutkovskaya.ea/haplotypes/text_files/samples_for_analysis.xlsx', index_col=0)
+filtered = annotation[~annotation['patient'].isna()]
+filtered['patient'] = filtered['patient'].astype(int)
+kinship = kinship_data(filtered)
+filtered['patient'] = filtered['patient'].astype(str)
+ill_patients = filtered.loc[filtered['group'] == 'ILL', 'patient'].tolist()
+calling_region = [32037643, 32041345]
+res_var, manual_insp, lq_variants = check_conflicts(filtered, kinship, ill_patients, calling_region)
 
 # pd.DataFrame(res_var).to_excel('/home/rutkovskaya.ea/haplotypes/text_files/resolved.xlsx')
 
