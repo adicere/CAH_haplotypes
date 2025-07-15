@@ -26,6 +26,6 @@ current_dir="$(dirname "$(realpath "$0")")"
 bcftools view -h "${file}" > header.txt
 sed -i "s/pool/$sample/" header.txt
 python "$current_dir/modify_vcf.py" "$file" temp.txt
-cat header.txt temp.txt | bgzip > "$output_dir${sample}.${type}.rehead.vcf.gz" && tabix "$output_dir/${sample}.${type}.rehead.vcf.gz"
+cat header.txt temp.txt | bgzip > "$output_dir/${sample}.${type}.rehead.vcf.gz" && tabix "$output_dir/${sample}.${type}.rehead.vcf.gz"
 
 rm header.txt temp.txt 
