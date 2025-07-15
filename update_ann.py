@@ -103,7 +103,7 @@ def naive_calling(ann_file):
                         '-s', sample, 
                         '-o', reheaded_dir])
 
-        ann_file.at[idx, 'mpileup'] = f'{reheaded_dir}/{sample}.mpileup.rehead.vcf.gz'
+        ann_file.at[idx, 'mpileup_modified'] = f'{reheaded_dir}/{sample}.mpileup.rehead.vcf.gz'
     
     return res
    
