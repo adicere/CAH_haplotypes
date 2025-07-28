@@ -8,7 +8,7 @@ import glob
 
 bcftools_path = '/home/rutkovskaya.ea/miniforge3/envs/haplotypes/bin/bcftools'
 reference = '/home/rutkovskaya.ea/haplotypes/CYP21A2-amp_hg38.fasta'
-modificator='/home/rutkovskaya.ea/haplotypes/CAH_haplotypes/coords_header.sh'
+modificator='/home/rutkovskaya.ea/haplotypes/CAH_haplotypes/reheader.sh'
 
 
 updater = argparse.ArgumentParser(
