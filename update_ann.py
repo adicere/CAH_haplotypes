@@ -27,8 +27,8 @@ updater.add_argument('-e', '--exclude', type=str, help='provide a txt file with 
 
 args=updater.parse_args()
 
-# amplicon_ann = pd.read_csv(args.ann_file, sep='\t', index_col=0)
-amplicon_ann = pd.read_excel(args.ann_file, index_col=0)
+amplicon_ann = pd.read_csv(args.ann_file, sep='\t', index_col=0)
+# amplicon_ann = pd.read_excel(args.ann_file, index_col=0)
 # short=amplicon_ann.copy().iloc[:5, :]
 mpileup_dir=os.path.join(args.output, 'mpileup')  
 reheaded_dir = os.path.join(args.output, 'reheaded_vcfs')  
@@ -97,6 +97,7 @@ def naive_calling(ann_file):
         mpileup.stdout.close()
         calling.wait()           
         mpileup.wait() 
+        ann_file.at[idx, 'mpileup'] = filename
         subprocess.run(['bash', modificator, 
                         '-f', filename, 
                         '-t', 'mpileup', 
