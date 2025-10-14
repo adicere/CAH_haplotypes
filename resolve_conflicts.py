@@ -4,13 +4,30 @@ from collections import defaultdict
 import sys 
 import os
 import logging
+import argparse
 
-logging.basicConfig(
-    filename='check_results.log',
-    filemode='w', 
-    format='%(message)s',  
-    level=logging.INFO
-)
+resolver = argparse.ArgumentParser(prog='Checking the quality of the called variants',
+                                   description='Validating all variants called by HaplotypeCaller and DeepVariant with bcftools mpileup support')
+
+resolver.add_argument('ann_file', type=str, help='provide a file with paths to VCF files of processed amplicons')
+resolver.add_argument('-o', '--output', type=str, help='provide a path to the output directory to store the resulting xlsx files', metavar = 'DIR')
+
+args=resolver.parse_args()
+
+if args.output is not None:
+    logging.basicConfig(
+        filename=str(args.output + 'check_results.log'),
+        filemode='w', 
+        format='%(message)s',  
+        level=logging.INFO
+    )
+else:
+    logging.basicConfig(
+        filename='check_results.log',
+        filemode='w', 
+        format='%(message)s',  
+        level=logging.INFO
+    )
 
 def kinship_type(rel_i, rel_j):
     if rel_i == 'PARENT' and rel_j == 'PARENT':
@@ -163,7 +180,7 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
             vcf = vcf[(vcf['POS'] >= calling_region[0]) & (vcf['POS'] <= calling_region[1])]
         gt_hc[str(idx)]=gt_vectors(vcf)
         #bam
-        vcf = read_vcf(row['mpileup_modified'], mode = 'dv')
+        vcf = read_vcf(row['mp_modified'], mode = 'dv')
         if calling_region:
             vcf = vcf[(vcf['POS'] >= calling_region[0]) & (vcf['POS'] <= calling_region[1])]
         gt_bam[str(idx)]=gt_vectors(vcf)
@@ -182,8 +199,9 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
                 dv=sample_dv[position][0]
                 if hc == dv:
                     resolved[sample][position] = 'hc'
+                    #log_buffer.append(f"{position} in {sample} has no conflict between callers")
                 elif hc!=dv:
-                    # log_buffer.append(f"check {position}: HC - {sample_hc[position]}, DV - {dv}, bam - {sample_bam.get(position, 'Not found in bam')}")
+                    #log_buffer.append(f"check {position}: HC - {sample_hc[position]}, DV - {dv}, bam - {sample_bam.get(position, 'Not found in bam')}")
                     if position in sample_bam.keys():
                             mp=sample_bam[position][0]
                             if mp == hc:
@@ -204,7 +222,7 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
                             else:
                                 low_qual[str(sample)]['Variant'].append(position)
                                 low_qual[str(sample)]['Parameters'].append(', '.join(str(p) for p in sample_hc[position]))
-                                # log_buffer.append(f'data is unclear; need to check inheritance for {position} in {sample}')
+                                #log_buffer.append(f'data is unclear; need to check inheritance for {position} in {sample}')
                                 inheritance, message = check_inheritance(sample, position, kinship_data, gt_hc, gt_dv, gt_bam, ill_samples)
                                 if inheritance: 
                                     sample_checked=True
@@ -218,7 +236,7 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
                                     else:
                                         log_buffer.append(message + ' Dropping this variant, probably an artefact')
                         else:
-                            # log_buffer.append(f'data is unclear; need to check inheritance for {position} in {sample}')
+                            #log_buffer.append(f'data is unclear; need to check inheritance for {position} in {sample}')
                             inheritance, message = check_inheritance(sample, position, kinship_data, gt_hc, gt_dv, gt_bam, ill_samples)
                             if inheritance:
                                 sample_checked=True
@@ -233,12 +251,12 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
                                 else:
                                     log_buffer.append(message + ' Dropping this variant, probably an artefact')
             else:
-                # log_buffer.append(f'only called by HC for {position} in {sample}')
+                #log_buffer.append(f'only called by HC for {position} in {sample}')
                 if ((hc == 2 and vaf>0.85) or (hc==1 and vaf>= 0.2 and vaf <0.85)) and dp>=30:
-                    # log_buffer.append(f'{position} in {sample} is OK')
+                    #log_buffer.append(f'{position} in {sample} is has corresponding genotype-VAF data')
                     resolved[sample][position] = 'hc'        
                 else:
-                    # log_buffer.append(f'unclear {position} variant in {sample} with {sample_hc[position]}')
+                    #log_buffer.append(f'unclear {position} variant in {sample} with {sample_hc[position]}')
                     if position in sample_bam.keys():
                         mp=sample_bam[position][0]
                         if mp == hc:
@@ -251,7 +269,7 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
                                          f'HC - {sample_hc[position]}, BAM - {sample_bam[position]}')
                             resolved[sample][position] = 'mp'
                     else:
-                        # log_buffer.append(f'{position} in {sample} with {sample_hc[position]} cannot be supported by BAM, checking inheritance')
+                        #log_buffer.append(f'{position} in {sample} with {sample_hc[position]} cannot be supported by BAM, checking inheritance')
                         inheritance, message = check_inheritance(sample, position, kinship_data, gt_hc, gt_dv, gt_bam, ill_samples)
                         if inheritance: 
                             sample_checked=True
@@ -268,20 +286,20 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
 
         for position, dv_data in sample_dv.items():
             if position not in resolved[sample]:
-                # log_buffer.append(f'{position} in {sample} found in DV, but not in HC, checking it')
+                #log_buffer.append(f'{position} in {sample} found in DV, but not in HC, checking it')
                 dv=dv_data[0]  
                 bam = sample_bam.get(position)
                 if bam:
                     mp=bam[0]
                     if dv == mp:
-                        # log_buffer.append(f'DV {position} in {sample} is supported by BAM data {sample_bam[position]}')
+                        #log_buffer.append(f'DV {position} in {sample} is supported by BAM data {sample_bam[position]}')
                         resolved[sample][position] = 'dv'
                     else:
                         sample_checked=True
                         log_buffer.append(f'[CONFLICT] Conflict at {position}; Accepting mpileup genotype instead of DV')
                         resolved[sample][position] = 'mp'
                 else:
-                    # log_buffer.append(f'DV {position} in {sample} cannot be supported by BAM data, need to check inheritance')
+                    #log_buffer.append(f'DV {position} in {sample} cannot be supported by BAM data, need to check inheritance')
                     inheritance, message = check_inheritance(sample, position, kinship_data, gt_hc, gt_dv, gt_bam, ill_samples)
                     if inheritance == True:
                         sample_checked=True
@@ -295,17 +313,17 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
                             log_buffer.append(f"[INHERITANCE] Patient doesn't have relatives. {position} needs manual inspection.")
                         else:
                             log_buffer.append(message + ' Dropping this variant, probably an artefact')         
-        for position in sample_bam:
-            if position not in resolved[sample]:
-                mp, vaf, dp = sample_bam[position]
-                if dp >= 30:
-                    gt = 'heterozygous' if sample_bam[position][0] ==1 else 'homozygous'
-                    sample_checked=True
-                    log_buffer.append(f'[NAIVE VARIANT] {position} was called only by naive calling - {sample_bam[position]}')
-                    resolved[sample][position] = 'mp'
-                else:
-                    low_qual[str(sample)]['Variant'].append(position)
-                    low_qual[str(sample)]['Parameters'].append(', '.join(str(p) for p in sample_bam[position]))
+        # for position in sample_bam:
+        #     if position not in resolved[sample]:
+        #         mp, vaf, dp = sample_bam[position]
+        #         if dp >= 30:
+        #             gt = 'heterozygous' if sample_bam[position][0] ==1 else 'homozygous'
+        #             sample_checked=True
+        #             log_buffer.append(f'[NAIVE VARIANT] {position} was called only by naive calling - {sample_bam[position]}')
+        #             resolved[sample][position] = 'mp'
+        #         else:
+        #             low_qual[str(sample)]['Variant'].append(position)
+        #             low_qual[str(sample)]['Parameters'].append(', '.join(str(p) for p in sample_bam[position]))
 
         if sample_checked:
             all_logs[str(sample)] = log_buffer
@@ -323,7 +341,7 @@ def check_conflicts(ann_file, kinship_data, ill_samples, calling_region = None):
                         
                             
                     
-annotation=pd.read_excel('/home/rutkovskaya.ea/haplotypes/text_files/samples_for_analysis.xlsx', index_col=0)
+annotation=pd.read_excel(args.ann_file, index_col=0)
 filtered = annotation[~annotation['patient'].isna()]
 filtered['patient'] = filtered['patient'].astype(int)
 kinship = kinship_data(filtered)
@@ -332,16 +350,25 @@ ill_patients = filtered.loc[filtered['group'] == 'ILL', 'patient'].tolist()
 calling_region = [32037643, 32041345]
 res_var, manual_insp, lq_variants = check_conflicts(filtered, kinship, ill_patients, calling_region)
 
-# pd.DataFrame(res_var).to_excel('/home/rutkovskaya.ea/haplotypes/text_files/resolved.xlsx')
+rows = []
+for sample, data in lq_variants.items():
+    for variant, param in zip(data['Variant'], data['Parameters']):
+        rows.append({'Sample': sample, 'Variant': variant, 'Parameters': param})
 
 
-# rows = []
-# for sample, data in lq_variants.items():
-#     for variant, param in zip(data['Variant'], data['Parameters']):
-#         rows.append({'Sample': sample, 'Variant': variant, 'Parameters': param})
+low_qual_df = pd.DataFrame(rows)
 
-# low_qual_df = pd.DataFrame(rows)
+manual_df = pd.DataFrame(manual_insp)
 
+res_df = pd.DataFrame(res_var)
+res_df['POS'] = res_df.index.to_series().str.split('_').str[0].astype(int)
+df_sorted = res_df.sort_values(by='POS').drop(columns='POS')
 
-# pd.DataFrame(manual_insp).to_excel('/home/rutkovskaya.ea/haplotypes/text_files/manual_inspection.xlsx', index = False)
-# low_qual_df.to_excel('/home/rutkovskaya.ea/haplotypes/text_files/lq_variants.xlsx', index=False)
+if args.output is not None:
+    low_qual_df.to_excel(args.output+'low_qual_variants.xlsx', index=False)
+    manual_df.to_excel(args.output+'variants_for_manual_inspection.xlsx', index=False)
+    df_sorted.to_excel(args.output+'resolved_conflicts.xlsx')
+else:
+    low_qual_df.to_excel('low_qual_variants.xlsx', index=False)
+    manual_df.to_excel('variants_for_manual_inspection.xlsx', index=False)
+    df_sorted.to_excel('resolved_conflicts.xlsx')
