@@ -96,7 +96,7 @@ def naive_calling(ann_file):
                                     'mpileup',
                                     '-f', reference, 
                                     '-a', 'FORMAT/AD,FORMAT/DP', 
-                                    '-d', '3000',
+                                    '--no-BAQ', '-d', '3000',
                                     '-Ou', bam], stdout=subprocess.PIPE)
         calling =  subprocess.Popen([bcftools_path, 'call',
                                      '-mv', '-Oz', 
