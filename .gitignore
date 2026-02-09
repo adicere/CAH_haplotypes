@@ -2,3 +2,8 @@
 *.log
 *.xlsx
 *.code-workspace
+test.ipynb
+*.ipynb
+
+source_data/
+test/
