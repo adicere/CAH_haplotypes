@@ -4,6 +4,7 @@ import argparse
 import os 
 from pathlib import Path
 import subprocess
+import glob
 
 starter = argparse.ArgumentParser(prog='CYP21A2 haplotyping tool', 
                                   description='Haplotype extraction for single and family samples based on CYP21A2 amplicon sequencing')
@@ -42,6 +43,50 @@ def normalize_coordinates(vcf: str | Path, filename: str) -> None:
         
     subprocess.run(['tabix', f"{o_dir}/recalibrated/{filename}.recalibrated.vcf.gz"], check=True)
 
+def merge_samples(path_dir: str | Path, annotation: pd.DataFrame) -> None:
+    vcfs = glob.glob(f"{path_dir}/*.recalibrated.vcf.gz")
+    vcf_dict = {Path(vcf).name.replace(".recalibrated.vcf.gz", ""): vcf for vcf in vcfs}
+    order = annotation["patient"].astype(str)
+    sorted_vcfs = [vcf_dict[p] for p in order if p in vcf_dict]
+    missing = set(order) - set(vcf_dict.keys())
+    if missing:
+        raise ValueError(f"Missing VCFs for patients: {missing}")
+
+    with open(f"{o_dir}/tmp/sample_list.txt", 'w') as f:
+        f.write('\n'.join(sorted_vcfs))
+
+    renamer = annotation[['sample_name', 'patient']]
+    renamer.to_csv(f"{o_dir}/tmp/rename_merged.txt", sep='\t', header=False, index=False)
+
+    subprocess.run(['./merging.sh', '-s', f"{o_dir}/tmp/sample_list.txt", 
+                    '-r', f"{o_dir}/tmp/rename_merged.txt",
+                    '-o', f"{o_dir}/tmp/"], check=True)
+
+    # subprocess.run(['bcftools', 'merge', 
+    #                 '-l', f"{o_dir}/tmp/sample_list.txt", 
+    #                 '-0', 
+    #                 '-m', 'none',
+    #                 '-Oz', '-o', f"{o_dir}/tmp/merged_raw.vcf.gz"], 
+    #                check=True)
+
+    # subprocess.run(['tabix', f"{o_dir}/tmp/merged_raw.vcf.gz"], check=True)
+
+    # subprocess.run(['bcftools', 'reheader',
+    #     '-s', f"{o_dir}/tmp/rename_merged.txt",
+    #     '-o', f"{o_dir}/tmp/merged.vcf.gz",
+    #     f"{o_dir}/tmp/merged_raw.vcf.gz"], check=True)
+
+    # subprocess.run(['tabix', f"{o_dir}/tmp/merged.vcf.gz"], check=True)
+
+    # subprocess.run(['bcftools', 'annotate', 
+    #                 '-x', '^FORMAT/GT',  f"{o_dir}/tmp/merged.vcf.gz", 
+    #                 '-Oz', '-o',  f"{o_dir}/tmp/genotype_merged.vcf.gz"], check= True)
+    
+    # subprocess.run(['tabix', f"{o_dir}/tmp/genotype_merged.vcf.gz"], check=True)
+
+    # subprocess.run()
+    # # subprocess.run(['bcftools', 'merge', '-l', f"{o_dir}/tmp/sample_list.txt", '-0', '-m', 'none', '-Oz', '-o', f"{o_dir}/tmp/merged.vcf.gz"], check=True)
+    # # subprocess.run(['tabix', f"{o_dir}/tmp/merged.vcf.gz"], check=True)
 
 args = starter.parse_args()
 
@@ -55,11 +100,12 @@ for dir in folders:
 
 if args.list:
     with open(args.list) as f:
-        files=pd.read_csv(f, sep='\t')
+        ann=pd.read_csv(f, sep='\t')
     
-    for idx, row in files.iterrows():
-        normalize_coordinates(row['vcf'], row['patient'])
+    # for idx, row in ann.iterrows():
+    #     normalize_coordinates(row['vcf'], row['patient'])
     
+    merge_samples(f"{o_dir}/recalibrated", ann)
 
 if args.dir:
     for file in args.dir.glob('*.phased.vcf.gz'):
